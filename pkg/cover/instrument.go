@@ -46,6 +46,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,7 +66,22 @@ import (
 
 )
 
+var (
+	gGocCoverName = map[string]struct{}{}
+	gGocCoverFileContent = map[string]string{}
+)
+
 func init() {
+	{{range $i, $pkgCover := .DepsCover}}
+	{{range $file, $cover := $pkgCover.Vars}}
+	gGocCoverFileContent[{{printf "%q" $cover.File}}] = {{printf "%q" $cover.Content}}
+	{{end}}
+	{{end}}
+
+	{{range $file, $cover := .MainPkgCover.Vars}}
+	gGocCoverFileContent[{{printf "%q" $cover.File}}] = {{printf "%q" $cover.Content}}
+	{{end}}
+
 	go registerHandlersGoc()
 }
 
@@ -169,7 +185,12 @@ func registerHandlersGoc() {
 	mux.HandleFunc("/v1/cover/coverage", func(w http.ResponseWriter, r *http.Request) {
 		counters, _ := loadValuesGoc()
 		var n, d int64
-		for _, counter := range counters {
+		for name, counter := range counters {
+			if len(gGocCoverName) != 0 {
+				if _, ok := gGocCoverName[name]; !ok {
+					continue
+				}
+			}
 			for i := range counter {
 				if atomic.LoadUint32(&counter[i]) > 0 {
 					n++
@@ -191,6 +212,11 @@ func registerHandlersGoc() {
 		var active, total int64
 		var count uint32
 		for name, counts := range counters {
+			if len(gGocCoverName) != 0 {
+				if _, ok := gGocCoverName[name]; !ok {
+					continue
+				}
+			}
 			block := blocks[name]
 			for i := range counts {
 				stmts := int64(block[i].Stmts)
@@ -216,6 +242,80 @@ func registerHandlersGoc() {
 		clearValuesGoc()
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "clear call successfully")
+	})
+
+	mux.HandleFunc("/v1/cover/file/set", func(w http.ResponseWriter, r *http.Request) {
+		counters, _ := loadValuesGoc()
+		q := r.URL.Query()
+
+		nameList := q["name"]
+		if len(nameList) == 0 {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "miss name param")
+			return
+		}
+		name := nameList[0]
+
+		if _, ok := counters[name]; ok {
+			gGocCoverName[name] = struct{}{}
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "set file successfully")
+		} else {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "file not found. set file fail")
+		}
+	})
+
+	mux.HandleFunc("/v1/cover/file/unset", func(w http.ResponseWriter, r *http.Request) {
+		counters, _ := loadValuesGoc()
+		q := r.URL.Query()
+
+		nameList := q["name"]
+		if len(nameList) == 0 {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "miss name param")
+			return
+		}
+		name := nameList[0]
+
+		if _, ok := counters[name]; ok {
+			delete(gGocCoverName, name)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "unset file successfully")
+		} else {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "file not found. unset file fail")
+		}
+	})
+
+	mux.HandleFunc("/v1/cover/file/clear", func(w http.ResponseWriter, r *http.Request) {
+		gGocCoverName = map[string]struct{}{}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "set file successfully")
+	})
+
+	mux.HandleFunc("/v1/cover/content/get", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+
+		nameList := q["name"]
+		if len(nameList) == 0 {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "miss name param")
+			return
+		}
+		name := nameList[0]
+
+		w.WriteHeader(http.StatusOK)
+		if content, ok := gGocCoverFileContent[name]; ok {
+			data, err := base64.StdEncoding.DecodeString(content)
+			if err != nil {
+				fmt.Fprintln(w, "file content wrong. ")
+				return
+			}
+			fmt.Fprintln(w, string(data))
+		} else {
+			fmt.Fprintln(w, "file not found. ")
+		}
 	})
 
 	_log.Fatal(http.Serve(ln, mux))

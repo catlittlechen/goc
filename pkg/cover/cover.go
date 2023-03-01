@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,8 +68,9 @@ type PackageCover struct {
 
 // FileVar holds the name of the generated coverage variables targeting the named file.
 type FileVar struct {
-	File string
-	Var  string
+	File    string
+	Var     string
+	Content string
 }
 
 // Package map a package output by go list
@@ -276,7 +278,10 @@ func AddCounters(pkg *Package, mode string, globalCoverVarImportPath string) (*P
 
 	decl := ""
 	for file, coverVar := range coverVarMap {
-		decl += "\n" + tool.Annotate(path.Join(pkg.Dir, file), mode, coverVar.Var, globalCoverVarImportPath) + "\n"
+		content, desc := tool.Annotate(path.Join(pkg.Dir, file), mode, coverVar.Var, globalCoverVarImportPath)
+		decl += "\n" + desc + "\n"
+
+		coverVar.Content = base64.StdEncoding.EncodeToString(content)
 	}
 
 	return &PackageCover{

@@ -304,7 +304,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 // 1. add cover variables into the original file
 // 2. return the cover variables declarations as plain string
 // original dec: func annotate(name string) {
-func Annotate(name string, mode string, varVar string, globalCoverVarImportPath string) string {
+func Annotate(name string, mode string, varVar string, globalCoverVarImportPath string) ([]byte, string) {
 	// QINIU
 	switch mode {
 	case "set":
@@ -391,7 +391,7 @@ func Annotate(name string, mode string, varVar string, globalCoverVarImportPath 
 	// we will write all declarations into a single file
 	declBuf := bytes.NewBufferString("")
 	file.addVariables(declBuf)
-	return declBuf.String()
+	return content, declBuf.String()
 }
 
 // setCounterStmt returns the expression: __count[23] = 1.
